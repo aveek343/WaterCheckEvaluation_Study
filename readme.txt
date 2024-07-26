@@ -20,7 +20,13 @@ Follow the instructions listed below to run the scripts.
 
 ###################################################################################################### 
 Running the scripts for the first time: 
+
+Run the "WaterCheckEvaluation_Study.Rproj"
+
+First, run the "WaterCheckEvaluation_Study.Rproj".
+Next, run the scripts from R-studio. 
 Follow these steps in chronological order to set up the necessary database and reproduce the plots for the first time. 
+
 1.	1_DataHandler.R—will create a database which is almost 8 Gigabites 
 2.	2_DataProcessing.R—will  create all the datasets and dataframes required for analysis
 3.	3_KSTestFunctions.R—will create the functions required to perform Kolmogorov-Smirnov Tests (KS-tests)
@@ -32,6 +38,10 @@ Follow these steps in chronological order to set up the necessary database and r
 
 ###################################################################################################### 
 Any future runs: 
+
+Run the "WaterCheckEvaluation_Study.Rproj".
+Next, run the scripts from R-studio.
+
 These instructions assume that the necessary database has already been created during the initial run. Follow these steps in chronological order if this is your second time (or later) reproducing the plots.
 1.	1_2_Second_and_Later_run_DataHandler.R—connects with the database
 2.	2_DataProcessing.R—processes the data for analysis
