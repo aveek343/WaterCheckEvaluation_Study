@@ -2,8 +2,9 @@
 Author: Mahmud Aveek
 Date: 07-25-2024
 
+The scripts will reproduce the figures and results presented in the manuscript named “Evaluating the Impact of Residential Landscape Audits Using 5-Second Water Use Data.” Download the codes as zip, and extract it in a drive that has more than 10 GB space.  
 
-The scripts will reproduce the figures and results presented in the manuscript named “Evaluating the Impact of Residential Landscape Audits Using 5-Second Water Use Data.” Download following scripts and files from the Github:  
+List of scripts and files at Github:  
 •	1_DataHandler.R
 •	1_2_Second_and_Later_run_DataHandler.R
 •	2_DataProcessing.R
