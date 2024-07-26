@@ -10,6 +10,10 @@ install.packages("tidyverse")
 install.packages("DBI")
 install.packages("RSQLite")
 install.packages("randomForest")
+install.packages('lubridate')
+install.packages("tidymodels")
+install.packages("ggplot2")
+install.packages("ggpubr")
 remotes::install_github("program--/HSClientR")
 
 rm(list = ls()) # remove everything
