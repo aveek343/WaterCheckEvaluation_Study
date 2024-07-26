@@ -1,7 +1,7 @@
 # This script creates 5 plots provided in the main text of the paper 
 # Author: Mahmud Aveek
 # Date: 06-09-2024
-
+# Runtime: 30 seconds
 ##################################################################
 # Following codes are for viewing water events together (Figure 1)
 

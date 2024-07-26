@@ -7,10 +7,6 @@
 
 # rm(list = ls()) # remove everything
 
-library(remotes)
-library(HSClientR)
-library(tidyverse)
-library(DBI)
 library(lubridate)
 library(tidymodels)
 library(ggplot2)
@@ -283,7 +279,7 @@ vol <- map_df(unique(df_daily$SiteID), KS_test, variable = 'dvol') # daily volum
 
 # View test results - example
 d_lastirr %>%
-  filter(pvalue < 0.05) %>% View() # significant change 
+  filter(pvalue < 0.05) # %>% View() # significant change 
 
 # function to plot CDF
 cdf_builder <- function(siteid, variable){

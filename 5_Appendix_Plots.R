@@ -1,6 +1,7 @@
 # This script creates 5 plots provided (Number 2 to 6) in in the Appendix 1 (Figures)
 # Author: Mahmud Aveek, David Rosenberg
 # Date: 06-09-2024
+# Runtime: 30 seconds
 ###############################################
 # Appendix figure 2: Total water use during pre-Water Check period
 

@@ -1,6 +1,14 @@
-# Run this script (1_2_Second_and_Later_run_DataHandler.R) instead of 1_DataHandler.R once the database is created for the second and any later runs.
+# This script loads all data needed from HydroShare (HS) and creates a database that is read in all scripts
 # 01/27/2023
 # Author: Camilo B.
+# This script takes ~ 1-2 min to run.
+
+# install.packages("remotes")
+# install.packages("tidyverse")
+# install.packages("DBI")
+# install.packages("RSQLite")
+# install.packages("randomForest")
+# remotes::install_github("program--/HSClientR")
 
 rm(list = ls()) # remove everything
 
@@ -9,7 +17,6 @@ library(HSClientR)
 library(tidyverse)
 library(DBI)
 options(timeout=100)
-
 # Load urls.csv 
 # This file contains the urls of all the files we need.
 # It was created using an R client to interact with HydroShare API
@@ -116,6 +123,40 @@ dbListTables(con)
 
 # Load files urls - from HS
 files <- read_csv('urls_USU_WaterConservation.csv') # this file has all the information about the data files we need
+
+# # Database Loading data
+# 
+# # Sites
+# files %>%
+#   filter(str_detect(url, 'Sites.csv')) %>%
+#   pull(url) %>% # select the url
+#   read_csv() %>%
+#   dbWriteTable(con, "Sites", ., overwrite = F, append = T) # Read the csv and load the data into the database
+# #  Flume property data
+# files %>%
+#   filter(str_detect(url, 'FlumePropertyData.csv')) %>%
+#   pull(url) %>% # select the url
+#   read_csv() %>%
+#   dbWriteTable(con, "FlumePropertyData", ., overwrite = F, append = T) # Read the csv and load the data into the database
+# #  USU WaterCheck data
+# files %>%
+#   filter(str_detect(url, 'WaterCheckData.csv')) %>%
+#   pull(url) %>% # select the url
+#   read_csv() %>%
+#   dbWriteTable(con, "WaterCheckData", ., overwrite = F, append = T) # Read the csv and load the data into the database
+# # High temporal resolution data
+# files %>%
+#   filter(str_detect(url, 'RawWaterUseData')) %>%
+#   pull(url) -> WaterUseData_urls
+# # function to load and write 1 csv
+# WaterUSeData_Loader <- function(x){
+#   read.csv(x) %>%
+#   dbWriteTable(con, "WaterUse", ., overwrite = F, append = T) # Read the csv and load the data into the database
+# }
+# map(WaterUseData_urls, WaterUSeData_Loader)
+# End of database loading.
+# dbDisconnect(con)
+
 
 # Load training data
 files %>%
