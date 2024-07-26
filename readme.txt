@@ -21,8 +21,6 @@ Follow the instructions listed below to run the scripts.
 ###################################################################################################### 
 Running the scripts for the first time: 
 
-Run the "WaterCheckEvaluation_Study.Rproj"
-
 First, run the "WaterCheckEvaluation_Study.Rproj".
 Next, run the scripts from R-studio. 
 Follow these steps in chronological order to set up the necessary database and reproduce the plots for the first time. 
