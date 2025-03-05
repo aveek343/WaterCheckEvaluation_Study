@@ -2,9 +2,13 @@
 Author: Mahmud Aveek
 Date: 07-25-2024
 
-The scripts will reproduce the figures and results presented in the manuscript named “Evaluating the Impact of Residential Landscape Audits Using 5-Second Water Use Data.” Download the codes as zip, and extract it in a drive that has more than 10 GB space.  
+Version details of R, Rstudio, and the libraries are provided at the end of this note.
 
-List of scripts and files at Github:  
+Rstudio automatically instructs which libraries to download when you load the scripts. 
+Check and download all required libraries.
+
+The scripts will reproduce the figures and results presented in the manuscript named “Evaluating the Impact of Residential Landscape Audits Using 5-Second Water Use Data.” 
+Download following scripts and files from the Github:  
 •	1_DataHandler.R
 •	1_2_Second_and_Later_run_DataHandler.R
 •	2_DataProcessing.R
@@ -14,7 +18,9 @@ List of scripts and files at Github:
 •	6_Appendix_Figure_PopulationVsParticipant_HP.R
 •	“WaterCheckEvaluation_Study.Rproj”,
 •	“urls_USU_WaterConservation.csv”,
-•	md_withSiteID_anonymous_summer_HP.csv.
+•	md_withSiteID_anonymous_summer_HP.csv
+•	WaterCheckEvaluation_Study.Rproj.
+
 
 Follow the instructions listed below to run the scripts.
 
@@ -22,9 +28,8 @@ Follow the instructions listed below to run the scripts.
 ###################################################################################################### 
 Running the scripts for the first time: 
 
-First, run the "WaterCheckEvaluation_Study.Rproj".
-Next, run the scripts from R-studio. 
-Follow these steps in chronological order to set up the necessary database and reproduce the plots for the first time. 
+First, run the "WaterCheckEvaluation_Study.Rproj". It will set your directory current.
+Follow these steps in chronological order to set up the necessary database and reproduce the plots for the first time. Note the initial run may take between 20-40 minutes to run as the database is being created.
 
 1.	1_DataHandler.R—will create a database which is almost 8 Gigabites 
 2.	2_DataProcessing.R—will  create all the datasets and dataframes required for analysis

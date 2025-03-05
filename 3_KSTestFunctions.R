@@ -10,7 +10,7 @@
 # Analysis at the weekly level 
 # Add the budget
 kc = 0.8 # generalization - crop coefficient # based on Endtar-Wada et al. (2008) which says 0.7-0.9 for cool season turf
-DU = 1 # KK suggested to use 1 (DR suggested 0.85 distribution uniformity based on the report) [may change]
+DU = 1  
 # Re = 0.8 # can be an arbitrary value of 0.80 as effective rainfall portion; this coefficient is based on Lewis et al. (2016), USEPA (2011)
 # or,
 # effective rainfall (Re) can vary with the amount of Rainfall 

@@ -67,7 +67,7 @@ dataframe  %>%
   ggplot(aes(genericTime, VolumeGal * (60/5), group = variable, color = variable)) + 
   geom_line(size=1) +
   scale_color_manual("", values = c("#4334eb", "#eb3483"), 
-                     label = c("Indoor use", "Lawn Irrigation"))+
+                     label = c("Indoor use", "Sprinkler Irrigation"))+
   labs(y = 'Flow Rate (GPM)', x = 'Time') +
   theme_classic()+
   theme(legend.position = "top",
@@ -114,8 +114,8 @@ FlumePropertyData %>%
   ggplot(aes(x = City, y = as.factor(value), group = as.factor(bar_plot_priority), fill = as.factor(Variable))) +
   geom_bar(position="dodge", stat="identity") +
   scale_fill_manual("Status", values = c("#eb3483", "#4334eb","#96CEF5","#96F1F5"), 
-                    label = c("flume installed","water check completed",
-                              "considered for\nbehavior change analysis","interview completed"),
+                    label = c("Flume installed","Water Check completed",
+                              "Considered for\nbehavior change analysis","Interview completed"),
                     breaks=c('flume_installed','water_check_completed',
                              'behavior_change_analysis','interviewCompleted'))+
   labs(y= "number of properties", x = "city")+

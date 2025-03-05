@@ -120,6 +120,35 @@ df_daily %>% filter(SiteID %in% sites_with_pre_post_df$SiteID) %>%
 plot(preWaterCheckDailyWaterUseBehaviorValues)
 
 ###############################################
+# Figure 4: Cumulative distribution function of residuals (water use – water budget) 
+# showing changes in water use among high and low water users.
+
+
+weekly_volumetric_df_with_pre_wc_budget_comparison %>%
+  filter(name == 'residual') %>%
+  mutate(new_variable = paste0(pre_post, '_', user_cat)) %>% 
+  ggplot(aes(value,
+             group = new_variable, 
+             color = user_cat,linetype= pre_post 
+  )) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1)) +
+  stat_ecdf(size=1) +
+  scale_color_manual("Water user group",
+                     labels= c('Low user', 'High user'),
+                     values = c("blue","#E51349"))+
+  scale_linetype_manual("Water use period",
+                        values=c("dotted", "solid"), 
+                        breaks=c('pre', 'post')) +
+  theme_classic(base_size = 12) +
+  theme(legend.position ="top") +
+  xlab("Residual = Actual water use (gallon/week) - Water budget (gallon/week)") +
+  ylab("Empirical Cumulative Distribution Function (ECDF)") -> CDM_Residual
+
+
+plot(CDM_Residual)
+
+
+###############################################
 # Figure 5: KS-test for four water use variables between pre- and post-water check periods
 # variables: dvol, dmin, d_lastirr, n_eve
 individualDailyVolumeKSTest_plot <- ks_test_plots_siteWise(15, 'dvol')

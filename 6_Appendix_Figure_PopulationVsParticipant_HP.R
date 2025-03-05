@@ -71,7 +71,7 @@ ggplot(dfCombined, aes(x=SummerUsage, group = NumAsText, color = NumAsText)) +
   theme(text = element_text(size=24), legend.title=element_blank(), legend.text=element_text(size=24),
         legend.position = c(0.8, 0.8)) -> CumPlot
 
-
+CumPlot
 
 ## 4. QQ-plot
 ggplot(dfCombined) +
@@ -97,7 +97,7 @@ ggplot(dfCombined) +
   theme(text = element_text(size=24), legend.text=element_text(size=24),
         legend.position = c(0.2, 0.8)) -> qqPlot
 
-
+qqPlot
 
 ks.test(x = hydeParkPop_summerUse_part$SummerUsage, 
         y = hydeParkPop_summerUse$SummerUsage, alternative = "two.sided" )
