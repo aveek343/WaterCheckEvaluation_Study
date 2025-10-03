@@ -120,4 +120,5 @@ loaded via a namespace (and not attached):
 [69] GPfit_1.0-9         rstatix_0.7.2       digest_0.6.37       htmlwidgets_1.6.4  
 [73] farver_2.1.2        htmltools_0.5.8.1   memoise_2.0.1       lifecycle_1.0.4    
 [77] hardhat_1.4.2       httr_1.4.7          bit64_4.6.0-1       MASS_7.3-65        
+
 [81] sparsevctrs_0.3.4  
