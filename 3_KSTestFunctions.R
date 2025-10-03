@@ -647,8 +647,8 @@ KS_test_weekly_function_advanced <- function(variable, city) { # variable = week
   # water_use_df <- tibble(lm_pre_use = lm_pre_use$y,
   #                        post_use = post_use,
   #                        difference = lm_pre_use - post_use)
-  # 
-  
+
+
   # plotting the ks test
   if(variable_name != "weekly_volume_budgetGal") { 
     ggplot(weekly_df, aes(x = value,
@@ -794,6 +794,192 @@ KS_test_weekly_function_advanced <- function(variable, city) { # variable = week
 # KS_test_weekly_function_advanced(variable = "budgetGal", city = "Logan")
 # KS_test_weekly_function_advanced(variable = "residual", city = "Logan")
 
+# to convert from gallon to liter
+KS_test_weekly_function_advanced_liter <- function(variable, city) {
+  # variable = weekly_volume, budgetGal, residual, or "weekly_volume_budgetGal"
+  conv <- 3.78541  # gallons -> liters
+  
+  variable_name <- variable
+  city_name     <- city
+  
+  # ---------------- Filter data ----------------
+  if (city_name == "All" & variable_name != "weekly_volume_budgetGal") {
+    weekly_df <- dplyr::filter(all_pre_post_weekly, name == variable_name)
+  } else if (city_name == "All" & variable_name == "weekly_volume_budgetGal") {
+    weekly_df <- dplyr::filter(all_pre_post_weekly, name %in% c("weekly_volume","budgetGal"))
+  } else if (city_name != "All" & variable_name != "weekly_volume_budgetGal") {
+    weekly_df <- all_pre_post_weekly %>% dplyr::filter(name == variable_name, City == city_name)
+  } else {
+    weekly_df <- all_pre_post_weekly %>% dplyr::filter(name %in% c("weekly_volume","budgetGal"), City == city_name)
+  }
+  
+  # liters for plotting (keep gallons in 'value' for stats)
+  weekly_df <- weekly_df %>% dplyr::mutate(value_l = value * conv)
+  
+  # ---------------- Pre/Post vectors (gallons) ----------------
+  if (variable_name != "weekly_volume_budgetGal") {
+    pre_weekly  <- as.vector(unlist(weekly_df[weekly_df$pre_post == "pre",  "value"]))
+    post_weekly <- as.vector(unlist(weekly_df[weekly_df$pre_post == "post", "value"]))
+  } else {
+    pre_weekly  <- as.vector(unlist(weekly_df[weekly_df$pre_post == "pre"  & weekly_df$name == "weekly_volume",  "value"]))
+    post_weekly <- as.vector(unlist(weekly_df[weekly_df$pre_post == "post" & weekly_df$name == "weekly_volume", "value"]))
+  }
+  
+  # ---------------- KS stats (gallons) ----------------
+  Dcrit     <- 1.36 * sqrt((length(pre_weekly) + length(post_weekly)) / (length(pre_weekly) * length(post_weekly)))
+  pre_ecdf  <- ecdf(pre_weekly)
+  post_ecdf <- ecdf(post_weekly)
+  
+  ksTest_weekly_l <- ks.test(pre_weekly, post_weekly, alternative = "less")
+  ksTest_weekly_g <- ks.test(pre_weekly, post_weekly, alternative = "greater")
+  
+  ksTest_Df <- tibble::tibble(
+    ksTest_type       = c(ksTest_weekly_l$alternative, ksTest_weekly_g$alternative),
+    ksTest_type_short = c("less","greater"),
+    p_value           = c(ksTest_weekly_l$p.value, ksTest_weekly_g$p.value),
+    Dcrit             = Dcrit,
+    DStat             = c(ksTest_weekly_l$statistic, ksTest_weekly_g$statistic),
+    DStat_Bigger      = ifelse(DStat > Dcrit, "True", "False"),
+    p_significant     = ifelse(p_value < 0.05, "True", "False")
+  )
+  ksTest_Df_label <- dplyr::filter(ksTest_Df, DStat_Bigger == "True", p_significant == "True")
+  
+  # ---------------- Largest vertical gap ----------------
+  first_length  <- ifelse(ksTest_Df_label$ksTest_type_short[1] == "less", length(pre_weekly),  length(post_weekly))
+  second_length <- ifelse(ksTest_Df_label$ksTest_type_short[1] == "less", length(post_weekly), length(pre_weekly))
+  
+  first_data  <- if (length(pre_weekly)  == first_length)  pre_weekly  else post_weekly
+  second_data <- if (length(post_weekly) == second_length) post_weekly else pre_weekly
+  
+  combined_data         <- c(first_data, second_data)
+  combined_data_rank    <- order(combined_data)
+  location_assign       <- cumsum(ifelse(combined_data_rank <= first_length, second_length, -first_length))
+  biggest_value_location <- which.max(abs(location_assign))
+  largest_diff_location_gal <- combined_data[combined_data_rank[biggest_value_location]]
+  largest_diff_location_l   <- largest_diff_location_gal * conv
+  largest_diff_location_l   <- largest_diff_location_gal * conv
+  
+  # quantile guide x-positions (liters)
+  preQuntile_l  <- unname(quantile(pre_ecdf,  na.rm = TRUE, probs = c(0.25,0.375,0.5,0.625,0.75,0.875)))  * conv
+  postQuntile_l <- unname(quantile(post_ecdf, na.rm = TRUE, probs = c(0.25,0.375,0.5,0.625,0.75,0.875))) * conv
+  
+  # ---------------- Axis range (liters) ----------------
+  max_x_l    <- max(weekly_df$value_l, largest_diff_location_l, preQuntile_l, postQuntile_l, na.rm = TRUE)
+  breaks_end <- ceiling(max_x_l / 25000) * 25000
+  # we'll set limits via coord_cartesian() to preserve 'expand' padding
+  x_right <- breaks_end + 2000
+  
+  # ---------------- Plotting ----------------
+  if (variable_name != "weekly_volume_budgetGal") {
+    p_all_week_cdf <-
+      ggplot2::ggplot(weekly_df, ggplot2::aes(x = value_l, group = pre_post, color = pre_post)) +
+      ggplot2::stat_ecdf(size = 1) +
+      ggplot2::scale_color_manual(
+        values = c("post" = "#3275a8", "pre" = "pink"),
+        breaks = c("post","pre"),
+        labels = c("post-WC", "pre-WC")
+      ) +
+      ggplot2::theme_classic() +
+      # ggplot2::theme_bw(base_size = 12) +
+      ggplot2::theme(legend.position = "top", legend.title = ggplot2::element_blank()) +
+      ggplot2::xlab(gsub("gallons/week","liters/week", unique(weekly_df$x_label), ignore.case = TRUE)) +
+      ggplot2::ylab("ECDF") +
+      ggplot2::ggtitle(paste0(
+        "City: ", city_name, "\n", unique(weekly_df$title),
+        "\nD-stat:", round(ksTest_Df_label$DStat, 2), ", D-Crit:", round(ksTest_Df_label$Dcrit, 2),
+        "\np-value:", formatC(ksTest_Df_label$p_value),
+        "\nAlt. hypothesis:", ksTest_Df_label$ksTest_type_short
+      )) +
+      
+      ggplot2::geom_segment(
+        ggplot2::aes(x = largest_diff_location_l, y = post_ecdf(largest_diff_location_gal),
+                     xend = largest_diff_location_l, yend = pre_ecdf(largest_diff_location_gal)),
+        linetype = "dashed", color = "blue", size = 2
+      ) +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[1], y = .25,   xend = postQuntile_l[1], yend = .25),   linetype = "dotted", color = "brown") +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[2], y = 0.375, xend = postQuntile_l[2], yend = 0.375), linetype = "dotted", color = "brown") +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[3], y = 0.5,   xend = postQuntile_l[3], yend = 0.5),   linetype = "dotted", color = "brown") +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[4], y = 0.625, xend = postQuntile_l[4], yend = 0.625), linetype = "dotted", color = "brown") +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[5], y = 0.75,  xend = postQuntile_l[5], yend = 0.75),  linetype = "dotted", color = "brown") +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[6], y = 0.875, xend = postQuntile_l[6], yend = 0.875), linetype = "dotted", color = "brown") +
+      ggplot2::geom_point(ggplot2::aes(x = largest_diff_location_l, y = post_ecdf(largest_diff_location_gal)), color = "blue", size = 4) +
+      ggplot2::geom_point(ggplot2::aes(x = largest_diff_location_l, y = pre_ecdf(largest_diff_location_gal)),  color = "blue", size = 4) +
+      ggplot2::geom_text(
+        ggplot2::aes(x = largest_diff_location_l,
+                     y = mean(pre_ecdf(largest_diff_location_gal), post_ecdf(largest_diff_location_gal)),
+                     label = paste0("D-stat: ", round(ksTest_Df_label$DStat, 2))),
+        hjust = -.5, size = 5, color = "blue"
+      ) +
+      ggplot2::scale_x_continuous(
+        breaks = seq(0, breaks_end, by = 25000),
+        labels = scales::comma,
+        expand = ggplot2::expansion(mult = c(0.01, 0), add = c(1000, 2000)) # small left pad, keep right headroom
+      ) +
+      ggplot2::coord_cartesian(xlim = c(0, x_right), clip = "off") +
+      ggplot2::theme(plot.margin = ggplot2::margin(5.5, 24, 5.5, 5.5))
+    
+  } else {
+    p_all_week_cdf <-
+      weekly_df %>%
+      dplyr::mutate(variable_type = paste0(pre_post, "_", name)) %>%
+      dplyr::select(variable_type, value_l) %>%
+      dplyr::mutate(lineType = ifelse(grepl("budget", variable_type, fixed = TRUE), "budget", "water used")) %>%
+      ggplot2::ggplot(ggplot2::aes(x = value_l)) +
+      ggplot2::stat_ecdf(size = 1, ggplot2::aes(group = variable_type, color = variable_type, linetype = lineType)) +
+      ggplot2::scale_linetype_manual("Variable", values = c("dashed", "solid")) +
+      ggplot2::scale_color_manual(
+        "Variable",
+        values = c("#96C3F5","#3275a8","#E3A1B2","#E51349"),
+        labels = c("post-WC Budget", "post-WC Water Used",
+                   "pre-WC Budget",  "pre-WC Water Used")
+      ) +
+      
+      #ggplot2::theme_bw() +
+      ggplot2::theme_classic(base_size = 12) +
+      ggplot2::theme(legend.position = "top", legend.title = ggplot2::element_blank()) +
+      ggplot2::xlab("Water Volume (liters/week)") +
+      ggplot2::ylab("ECDF") +
+      ggplot2::ggtitle(paste0(
+        "City: ", city_name, "\n",
+        "Comparison between actual pre- and post-Water Check\nWater use and Water budget (requirement)",
+        "\nD-stat:", round(ksTest_Df_label$DStat, 2), ", D-Crit:", round(ksTest_Df_label$Dcrit, 2),
+        "\np-value:", formatC(ksTest_Df_label$p_value),
+        "\nAlt. hypothesis:", ksTest_Df_label$ksTest_type_short
+      )) +
+      
+      ggplot2::geom_segment(
+        ggplot2::aes(x = largest_diff_location_l, y = post_ecdf(largest_diff_location_gal),
+                     xend = largest_diff_location_l, yend = pre_ecdf(largest_diff_location_gal)),
+        linetype = "dashed", color = "blue", size = 2
+      ) +
+      ggplot2::geom_point(ggplot2::aes(x = largest_diff_location_l, y = post_ecdf(largest_diff_location_gal)), color = "blue", size = 4) +
+      ggplot2::geom_point(ggplot2::aes(x = largest_diff_location_l, y = pre_ecdf(largest_diff_location_gal)),  color = "blue", size = 4) +
+      ggplot2::geom_text(
+        ggplot2::aes(x = largest_diff_location_l,
+                     y = mean(pre_ecdf(largest_diff_location_gal), post_ecdf(largest_diff_location_gal)),
+                     label = paste0("D-stat: ", round(ksTest_Df_label$DStat, 2))),
+        hjust = -.5, size = 5, color = "blue"
+      ) +
+      ggplot2::guides(linetype = "none") +
+      ggplot2::scale_x_continuous(
+        breaks = seq(0, breaks_end, by = 25000),
+        labels = scales::comma,
+        expand = ggplot2::expansion(mult = c(0.01, 0), add = c(1000, 2000))
+      ) +
+      ggplot2::coord_cartesian(xlim = c(0, x_right), clip = "off") +
+      ggplot2::theme(plot.margin = ggplot2::margin(5.5, 24, 5.5, 5.5))
+  }
+  # table_ecdf <- tibble(percentile_values = c(0.25,0.375,0.5, 0.625,0.75,0.875, 0.90),
+  #                      pre_ecdf = unname(quantile(pre_ecdf,na.rm = T,probs = c(0.25,0.375,0.5,0.625,0.75,0.875, 0.90))),
+  #                      post_ecdf = unname(quantile(post_ecdf,na.rm = T,probs = c(0.25,0.375,0.5,0.625,0.75,0.875, 0.90))))
+  # 
+  # print(table_ecdf)
+  return(p_all_week_cdf)
+}
+
+
+
+
 
 ########
 # create a KS test function to check how high and low user groups changed their water use
@@ -926,6 +1112,8 @@ KS_test_function_for_pre_wc_budgetVswaterApp_comparison <- function(PreWC_userCa
 
 KS_test_function_for_pre_wc_budgetVswaterApp_comparison(PreWC_userCategory = "Used less than budget",
                                                         variable = "residual", city = "All")
+KS_test_function_for_pre_wc_budgetVswaterApp_comparison(PreWC_userCategory = "Used more than budget",
+                                                        variable = "residual", city = "All")
 
 # Site-wise pre- post-intervention data comparison using KS test for 4 behavior variables
 
@@ -1041,6 +1229,127 @@ ks_test_plots_siteWise <- function(Siteid, Variable){
   return(plot_data)
   
 }
+
+# Site-wise pre- post-intervention data comparison using KS test for 4 behavior variables, but dvol in liter
+ks_test_plots_siteWise_liter <- function(Siteid, Variable){
+  
+  siteid = Siteid
+  variable = as.character(Variable)
+  
+  ks_test_data <- data_test %>%
+    select(SiteID, pre_post, dvol, dmin, n_eve, d_lastirr) %>%
+    pivot_longer(-c(SiteID, pre_post)) %>%
+    filter(SiteID == siteid) %>%
+    filter(name == variable) %>%
+    mutate(
+      # convert gallons to liters if variable is dvol
+      value = if_else(name == "dvol", value * 3.78541, value),
+      label = case_when(
+        variable == "dvol"      ~ "Daily irrigation volume (liter)",
+        variable == "dmin"      ~ "Daily irrigation duration (min)",
+        variable == "d_lastirr" ~ "Days between irrigation (days)",
+        variable == "n_eve"     ~ "Daily irrigation events (number)"
+      )
+    )
+  
+  # create pre and post-wc variable vectors
+  pre_data <- ks_test_data$value[ks_test_data$pre_post == "pre"]
+  post_data <- ks_test_data$value[ks_test_data$pre_post == "post"]
+  
+  # ks test
+  
+  # for less
+  ks_test_result_less <- ks.test(pre_data,post_data,alternative = "less")
+  # for greater
+  ks_test_result_greater <- ks.test(pre_data,post_data,alternative = "greater")
+  # for two sided
+  ks_test_result_ts <- ks.test(pre_data,post_data,alternative = "two.sided")
+  
+  # get the critical value using following formula which was extracted from this website: https://sparky.rice.edu/astr360/kstest.pdf
+  # Dcrit = 1.36* sqrt((lenght of pre+ length of post)/(length of pre* length of post)); 
+  # where 1.36 is a coefficient for alpha = 0.05 (95% confidence)
+  
+  Dcrit <- 1.36 * sqrt((length(pre_data) + length(post_data))/((length(pre_data) * length(post_data))))
+  
+  
+  # Create a dataframe with all these values to check what happened (increased, decreased)
+  ksTest_Df <- tibble(SiteID = siteid,
+                      ksTest_type = c(ks_test_result_less$alternative,ks_test_result_greater$alternative),
+                      ksTest_type_short = c(case_when(ksTest_type == "the CDF of x lies below that of y" ~ "less",
+                                                      ksTest_type == "the CDF of x lies above that of y" ~ "greater")),
+                      p_value = c(ks_test_result_less$p.value,ks_test_result_greater$p.value),
+                      Dcrit = Dcrit,
+                      DStat = c(ks_test_result_less$statistic,ks_test_result_greater$statistic),
+                      DStat_Bigger = ifelse(DStat > Dcrit, "True", "False"),
+                      p_significant = ifelse(p_value < 0.05, "True", "False"))
+  
+  ksTest_Df_label <- ksTest_Df %>%
+    # filter(ksTest_type != 'two-sided') %>%
+    filter(DStat_Bigger == "True" & p_significant == "True" )
+  
+  # now find the location of greatest vertical distance
+  # we need to find if the household increased or decreased the variable value
+  
+  first_length <- as.vector(ifelse(ksTest_Df_label$ksTest_type_short == 'less',
+                                   length(pre_data), length(post_data)))[1]
+  
+  second_length <- as.vector(ifelse(ksTest_Df_label$ksTest_type_short == 'less',
+                                    length(post_data), length(pre_data)))[1]
+  
+  if(length(pre_data) == first_length){
+    first_data <- pre_data
+  } else {
+    first_data <- post_data
+  }
+  
+  if(length(post_data) == second_length){
+    second_data <- post_data
+  } else {
+    second_data <- pre_data
+  }
+  
+  # pre_length <- length(pre_data)
+  # post_length <- length(post_data)
+  
+  combined_data <- c(first_data,second_data)
+  
+  combined_data_rank <- order(combined_data)
+  
+  location_assign <- cumsum(ifelse(combined_data_rank <= first_length, second_length, -first_length))
+  biggest_value_location <- which.max(abs(location_assign))
+  
+  largest_diff_location <- combined_data[combined_data_rank[biggest_value_location]]
+  
+  # check
+  pre_ecdf <- ecdf(pre_data)
+  
+  post_ecdf <- ecdf(post_data)
+  
+  abs(pre_ecdf(largest_diff_location) - post_ecdf(largest_diff_location))
+  
+  # plot
+  ks_test_data %>% 
+    select(pre_post, value) %>%
+    ggplot(aes(x = value,
+               group = pre_post, 
+               color = pre_post))+
+    stat_ecdf(size=1) + scale_color_manual("Period",values = c("#3275a8","pink"))+
+    theme_bw(base_size = 12) +
+    theme(legend.position ="top") +
+    xlab(unique(ks_test_data$label)) +
+    ylab("ECDF") +
+    geom_segment(aes(x = largest_diff_location, y = post_ecdf(largest_diff_location), xend = largest_diff_location, yend = pre_ecdf(largest_diff_location)),
+                 linetype = "dashed", color = "blue") +
+    geom_point(aes(x = largest_diff_location , y= post_ecdf(largest_diff_location)), color="blue", size=2) +
+    geom_point(aes(x = largest_diff_location , y= pre_ecdf(largest_diff_location)), color="blue", size=2)+
+    ggtitle(paste0("SiteID=", siteid, ", D-crit=", round(Dcrit,2), ", D-stat=", round(ksTest_Df_label$DStat,2),
+                   "\np-value=", formatC(ksTest_Df_label$p_value))) -> plot_data
+  
+  return(plot_data)
+  
+}
+
+
 # variables: dvol, dmin, d_lastirr, n_eve
 
 # ks_test_plots_siteWise(15,"n_eve")
@@ -1098,3 +1407,743 @@ ks_test_df_function <- function(Siteid, Variable){
 
 # test
 # ks_test_df_function(2,"dmin")
+###########################################################################
+# For comparing other behavioral variable at weekly (duration, and number of event  (Table 5))
+#####################################################################
+# KS test for all behavior variables (duration, event) using pooled data
+df_test_weekly_volumetric %>%
+  left_join(Sites) %>% ungroup() %>%
+  select(pre_post,total_irrigation_minutes, frequency,  City) %>%
+  relocate(City, .before = pre_post)%>%
+  pivot_longer(cols = total_irrigation_minutes:frequency) %>%
+  mutate(x_label = case_when(name == "total_irrigation_minutes" ~ "Weekly duration (minutes/week)",
+                             name == "frequency" ~ "Weekly Events (Events/week)"),
+         title = case_when(name == "total_irrigation_minutes" ~ "K-S Test for all weekly pre and post irrigation duration", 
+                           name == "frequency" ~ "K-S Test for all weekly pre and post pre and post irrigation event (number)")
+  )  -> duration_eventFreq_weeklyData
+
+# write the function
+KS_test_weekly_function_duration_eventNo <- function(variable, city) { 
+  # variable = "frequency"
+  # city = "All"
+  #comparison_period = comparisonPeriod
+  variable_name = variable
+  city_name = city
+  
+  if(city_name == "All"){
+    duration_eventFreq_weeklyData %>%
+      filter(name == variable_name) -> weekly_df
+  } else {
+    duration_eventFreq_weeklyData %>%
+      filter(name == variable_name) %>%
+      filter(City == city_name)-> weekly_df
+  }
+  # creating pre-post vectors
+  pre_weekly <- as.vector(unlist(weekly_df[weekly_df$pre_post == "pre", "value"]))
+  post_weekly <- as.vector(unlist(weekly_df[weekly_df$pre_post == "post", "value"]))
+  
+  
+  # Critical value for D-statistic
+  Dcrit <- 1.36 * sqrt((length(pre_weekly) + length(post_weekly))/((length(pre_weekly) * length(post_weekly))))
+  
+  # cdf creation
+  pre_ecdf <- ecdf(pre_weekly)
+  post_ecdf <- ecdf(post_weekly)
+  
+  #ks test
+  ksTest_weekly_l <- ks.test(pre_weekly,post_weekly, 
+                             alternative = c("less"))
+  ksTest_weekly_g <- ks.test(pre_weekly,post_weekly, 
+                             alternative = c("greater"))
+  ksTest_weekly_ts <- ks.test(pre_weekly,post_weekly, 
+                              alternative = c("two.sided"))
+  
+  ksTest_Df <- tibble(ksTest_type = c(ksTest_weekly_l$alternative,ksTest_weekly_g$alternative),
+                      ksTest_type_short = c(case_when(ksTest_type == "the CDF of x lies below that of y" ~ "less",
+                                                      ksTest_type == "the CDF of x lies above that of y" ~ "greater")),
+                      p_value = c(ksTest_weekly_l$p.value,ksTest_weekly_g$p.value),
+                      Dcrit = Dcrit,
+                      DStat = c(ksTest_weekly_l$statistic,ksTest_weekly_g$statistic),
+                      DStat_Bigger = ifelse(DStat > Dcrit, "True", "False"),
+                      p_significant = ifelse(p_value < 0.05, "True", "False"))
+  
+  ksTest_Df %>%
+    select(ksTest_type_short, DStat_Bigger,p_significant) %>%
+    pivot_longer(cols = DStat_Bigger:p_significant) ->randomCheck
+  
+  
+  true_false <- paste0(ksTest_Df[1,6] , ksTest_Df[1,7])
+  # df of ks-test for labeling purposes
+  
+  if (true_false == "FalseTrue" | true_false == "FalseFalse" | true_false == "TrueFalse") {
+    ksTest_Df %>%
+      filter(ksTest_type_short == 'less') -> ksTest_Df_label
+    
+  } else {
+    ksTest_Df %>%
+      filter(DStat_Bigger == "True" & p_significant == "True") -> ksTest_Df_label
+  }
+  
+  
+  # now find the location of greatest vertical distance
+  # we need to find if the household increased or decreased the variable value
+  
+  first_length <- as.vector(ifelse(ksTest_Df_label$ksTest_type_short == 'less',
+                                   length(pre_weekly), length(post_weekly)))[1]
+  
+  second_length <- as.vector(ifelse(ksTest_Df_label$ksTest_type_short == 'less',
+                                    length(post_weekly), length(pre_weekly)))[1]
+  
+  if(length(pre_weekly) == first_length){
+    first_data <- pre_weekly
+  } else {
+    first_data <- post_weekly
+  }
+  
+  if(length(post_weekly) == second_length){
+    second_data <- post_weekly
+  } else {
+    second_data <- pre_weekly
+  }
+  
+  # pre_length <- length(pre_data)
+  # post_length <- length(post_data)
+  
+  combined_data <- c(first_data,second_data)
+  
+  combined_data_rank <- order(combined_data)
+  
+  location_assign <- cumsum(ifelse(combined_data_rank <= first_length, second_length, -first_length))
+  biggest_value_location <- which.max(abs(location_assign))
+  
+  largest_diff_location <- combined_data[combined_data_rank[biggest_value_location]]  
+  
+  
+  # # creating result df
+  # weekly_ks_test_result <- tibble(pvalue = ksTest_weekly_l$p.value,
+  #                                 D = as.numeric(ksTest_weekly_l$statistic),
+  #                                 pre_n = length(pre_weekly),
+  #                                 post_n = length(post_weekly),
+  #                                 alternative_hypothesis = ifelse(ksTest_weekly_l$alternative == "the CDF of x lies below that of y","less",
+  #                                                                 ifelse(ksTest_weekly_l$alternative == "the CDF of x lies above that of y","greater","two.sided")),
+  #                                 variable = variable_name)
+  
+  # data for shaded region
+  
+  preQuntile <- unname(quantile(pre_ecdf,na.rm = T,probs = c(0.25,0.375,0.5, 0.625,0.75,0.875)))
+  postQuntile <- unname(quantile(post_ecdf,na.rm = T,probs = c(0.25,0.375,0.5,0.625,0.75,0.875)))
+  
+  
+  # plotting the ks test
+  
+  p_all_week_cdf<-  ggplot(weekly_df, aes(x = value,
+                                          group = pre_post, 
+                                          color = pre_post))+
+    stat_ecdf(size=1) + scale_color_manual(values = c("#3275a8","pink"))+
+    theme_bw(base_size = 12) +
+    theme(legend.position ="top") +
+    xlab(unique(weekly_df$x_label)) +
+    ylab("ECDF") +
+    #geom_line(size=1) +
+    ggtitle(paste0("City: ", city_name,"\n",
+                   unique(weekly_df$title), 
+                   "\nD-stat:",
+                   round(ksTest_Df_label$DStat,2),", D-Crit:", round(ksTest_Df_label$Dcrit,2),
+                   "\np-value:", formatC(ksTest_Df_label$p_value),
+                   "\nAlt. hypothesis:",ksTest_Df_label$ksTest_type_short)) +
+    theme_classic()+
+    theme(legend.title=element_blank(),
+          legend.position = "top")+
+    geom_segment(aes(x = largest_diff_location, y = post_ecdf(largest_diff_location), 
+                     xend = largest_diff_location, yend = pre_ecdf(largest_diff_location)),
+                 linetype = "dashed", color = "blue", size=2) +
+    geom_segment(aes(x = preQuntile[1], y = .25, 
+                     xend = postQuntile[1], yend = .25),
+                 linetype = "dotted", color = "brown")+
+    geom_segment(aes(x = preQuntile[2], y = 0.375, 
+                     xend = postQuntile[2], yend = 0.375),
+                 linetype = "dotted", color = "brown")+
+    geom_segment(aes(x = preQuntile[3], y = 0.5, 
+                     xend = postQuntile[3], yend = 0.5),
+                 linetype = "dotted", color = "brown")+
+    geom_segment(aes(x = preQuntile[4], y = 0.625, 
+                     xend = postQuntile[4], yend = 0.625),
+                 linetype = "dotted", color = "brown")+
+    geom_segment(aes(x = preQuntile[5], y = 0.75, 
+                     xend = postQuntile[5], yend = 0.75),
+                 linetype = "dotted", color = "brown") +
+    geom_segment(aes(x = preQuntile[6], y = 0.875, 
+                     xend = postQuntile[6], yend = 0.875),
+                 linetype = "dotted", color = "brown")+
+    geom_point(aes(x = largest_diff_location , y= post_ecdf(largest_diff_location)), color="blue", size=4) +
+    geom_point(aes(x = largest_diff_location , y= pre_ecdf(largest_diff_location)), color="blue", size=4) +
+    geom_text(aes(x=largest_diff_location, 
+                  y = mean(pre_ecdf(largest_diff_location),post_ecdf(largest_diff_location)),
+                  label = paste0("D-stat: ",
+                                 round(ksTest_Df_label$DStat,2))),
+              hjust = -.5,
+              # yjust = -1,
+              size = 5,
+              color = 'blue')
+  
+  print(paste0("pre-largest diff percentile=", pre_ecdf(largest_diff_location), "and the value=",largest_diff_location))
+  print(paste0("post-largest diff percentile=", post_ecdf(largest_diff_location)))
+  
+  table_ecdf <- tibble(percentile_values = c(0.25,0.375,0.5, 0.625,0.75,0.875, 0.90),
+                       pre_ecdf = unname(quantile(pre_ecdf,na.rm = T,probs = c(0.25,0.375,0.5,0.625,0.75,0.875, 0.90))),
+                       post_ecdf = unname(quantile(post_ecdf,na.rm = T,probs = c(0.25,0.375,0.5,0.625,0.75,0.875, 0.90))))
+  
+  print(table_ecdf)
+  
+  # plot(p_all_week_cdf)
+  return(p_all_week_cdf)
+}
+
+
+# variable = total_irrigation_minutes, frequency
+# city = Hyde Park, Logan
+#comparison_period = comparisonPeriod
+
+
+# KS_test_weekly_function_duration_eventNo("frequency", "All")
+# KS_test_weekly_function_duration_eventNo("total_irrigation_minutes", "All")
+
+#####################################################
+# daily pooled data for ks testing (Table 5)
+data_test %>%
+  left_join(Sites %>% select(SiteID,City)) %>% ungroup() %>%
+  select(City, pre_post, dvol, dmin, n_eve,d_lastirr) %>%
+  pivot_longer(-c(City, pre_post)) -> data_test2
+
+
+ks_test_plots <- function(City, Variable ){
+  
+  
+  
+  
+  variable_name = as.character(Variable)
+  city_name = as.character(City)
+  
+  # variable_name = 'dmin'
+  # city_name = 'Logan'
+  
+  
+  
+  if(city_name == "All"){
+    data_test2 %>%
+      filter(name == variable_name) -> daily_df
+  } else{
+    data_test2 %>%
+      filter(name == variable_name) %>%
+      filter(City == city_name)-> daily_df
+  }
+  
+  
+  daily_df  %>%
+    mutate(label = case_when(variable_name == "dvol" ~ "Daily irrigation Volume (gal)",
+                             variable_name == 'dmin' ~ "Daily irrigation duration (min)",
+                             variable_name == "d_lastirr" ~ "Days between irrigation (days)",
+                             variable_name == "n_eve" ~ "Daily irrigation events (number)"))-> ks_test_data
+  
+  
+  
+  
+  
+  
+  # create pre and post-wc variable vectors
+  pre_data <- ks_test_data$value[ks_test_data$pre_post == "pre"]
+  post_data <- ks_test_data$value[ks_test_data$pre_post == "post"]
+  
+  # ks test
+  
+  # for less
+  ks_test_result_less <- ks.test(pre_data,post_data,alternative = "less")
+  # for greater
+  ks_test_result_greater <- ks.test(pre_data,post_data,alternative = "greater")
+  # for two sided
+  ks_test_result_ts <- ks.test(pre_data,post_data,alternative = "two.sided")
+  
+  # get the critical value using following formula which was extracted from this website: https://sparky.rice.edu/astr360/kstest.pdf
+  # Dcrit = 1.36* sqrt((lenght of pre+ length of post)/(length of pre* length of post)); 
+  # where 1.36 is a coefficient for alpha = 0.05 (95% confidence)
+  
+  Dcrit <- 1.36 * sqrt((length(pre_data) + length(post_data))/((length(pre_data) * length(post_data))))
+  
+  
+  # Create a dataframe with all these values to check what happened (increased, decreased)
+  ksTest_Df <- tibble(ksTest_type = c(ks_test_result_less$alternative,ks_test_result_greater$alternative),
+                      ksTest_type_short = c(case_when(ksTest_type == "the CDF of x lies below that of y" ~ "less",
+                                                      ksTest_type == "the CDF of x lies above that of y" ~ "greater")),
+                      p_value = c(ks_test_result_less$p.value,ks_test_result_greater$p.value),
+                      Dcrit = Dcrit,
+                      DStat = c(ks_test_result_less$statistic,ks_test_result_greater$statistic),
+                      DStat_Bigger = ifelse(DStat > Dcrit, "True", "False"),
+                      p_significant = ifelse(p_value < 0.05, "True", "False"))
+  
+  
+  ksTest_Df %>%
+    select(ksTest_type_short, DStat_Bigger,p_significant) %>%
+    pivot_longer(cols = DStat_Bigger:p_significant) ->randomCheck
+  
+  
+  true_false <- paste0(ksTest_Df[1,6] , ksTest_Df[1,7])
+  
+  
+  # df of ks-test for labeling purposes
+  if (true_false == "FalseTrue" | true_false == "FalseFalse" | true_false == "TrueFalse") {
+    ksTest_Df %>%
+      filter(ksTest_type_short == 'less') -> ksTest_Df_label
+    
+  } else {
+    ksTest_Df %>%
+      filter(DStat_Bigger == "True" & p_significant == "True") -> ksTest_Df_label
+  }
+  
+  
+  
+  
+  # ksTest_Df_label <- ksTest_Df %>%
+  #   # filter(ksTest_type != 'two-sided') %>%
+  #   filter(DStat_Bigger == "True" & p_significant == "True" )
+  
+  # now find the location of greatest vertical distance
+  # we need to find if the household increased or decreased the variable value
+  
+  first_length <- as.vector(ifelse(ksTest_Df_label$ksTest_type_short == 'less',
+                                   length(pre_data), length(post_data)))[1]
+  
+  second_length <- as.vector(ifelse(ksTest_Df_label$ksTest_type_short == 'less',
+                                    length(post_data), length(pre_data)))[1]
+  
+  if(length(pre_data) == first_length){
+    first_data <- pre_data
+  } else {
+    first_data <- post_data
+  }
+  
+  if(length(post_data) == second_length){
+    second_data <- post_data
+  } else {
+    second_data <- pre_data
+  }
+  
+  # pre_length <- length(pre_data)
+  # post_length <- length(post_data)
+  
+  combined_data <- c(first_data,second_data)
+  
+  combined_data_rank <- order(combined_data)
+  
+  location_assign <- cumsum(ifelse(combined_data_rank <= first_length, second_length, -first_length))
+  biggest_value_location <- which.max(abs(location_assign))
+  
+  largest_diff_location <- combined_data[combined_data_rank[biggest_value_location]]
+  
+  # check
+  pre_ecdf <- ecdf(pre_data)
+  
+  post_ecdf <- ecdf(post_data)
+  
+  abs(pre_ecdf(largest_diff_location) - post_ecdf(largest_diff_location))
+  
+  
+  # data for shaded region
+  
+  preQuntile <- unname(quantile(pre_ecdf,na.rm = T,probs = c(0.25,0.375,0.5, 0.625,0.75,0.875)))
+  postQuntile <- unname(quantile(post_ecdf,na.rm = T,probs = c(0.25,0.375,0.5,0.625,0.75,0.875)))
+  
+  
+  # plot
+  ks_test_data %>% 
+    select(pre_post, value) %>%
+    ggplot(aes(x = value,
+               group = pre_post, 
+               color = pre_post))+
+    stat_ecdf(size=1) + scale_color_manual("Period",values = c("#3275a8","pink"))+
+    theme_bw(base_size = 12) +
+    theme(legend.position ="top") +
+    xlab(unique(ks_test_data$label)) +
+    ylab("ECDF") +
+    geom_segment(aes(x = largest_diff_location, y = post_ecdf(largest_diff_location), 
+                     xend = largest_diff_location, yend = pre_ecdf(largest_diff_location)),
+                 linetype = "dashed", color = "blue", size=2) +
+    geom_segment(aes(x = preQuntile[1], y = .25, 
+                     xend = postQuntile[1], yend = .25),
+                 linetype = "dotted", color = "brown")+
+    geom_segment(aes(x = preQuntile[2], y = 0.375, 
+                     xend = postQuntile[2], yend = 0.375),
+                 linetype = "dotted", color = "brown")+
+    geom_segment(aes(x = preQuntile[3], y = 0.5, 
+                     xend = postQuntile[3], yend = 0.5),
+                 linetype = "dotted", color = "brown")+
+    geom_segment(aes(x = preQuntile[4], y = 0.625, 
+                     xend = postQuntile[4], yend = 0.625),
+                 linetype = "dotted", color = "brown")+
+    geom_segment(aes(x = preQuntile[5], y = 0.75, 
+                     xend = postQuntile[5], yend = 0.75),
+                 linetype = "dotted", color = "brown") +
+    geom_segment(aes(x = preQuntile[6], y = 0.875, 
+                     xend = postQuntile[6], yend = 0.875),
+                 linetype = "dotted", color = "brown") +
+    geom_segment(aes(x = largest_diff_location, y = post_ecdf(largest_diff_location), xend = largest_diff_location, yend = pre_ecdf(largest_diff_location)),
+                 linetype = "dashed", color = "blue") +
+    geom_point(aes(x = largest_diff_location , y= post_ecdf(largest_diff_location)), color="blue", size=2) +
+    geom_point(aes(x = largest_diff_location , y= pre_ecdf(largest_diff_location)), color="blue", size=2)+
+    ggtitle(paste0("City=",city_name,", ",unique(ks_test_data$label), 
+                   "\nD-crit=", round(Dcrit,2), ", D-stat=", round(ksTest_Df_label$DStat,2),
+                   "\np-value=", formatC(ksTest_Df_label$p_value))) -> plot_data
+  
+  table_ecdf <- tibble(percentile_values = c(0.25,0.375,0.5, 0.625,0.75,0.875, 0.90),
+                       pre_ecdf = unname(quantile(pre_ecdf,na.rm = T,probs = c(0.25,0.375,0.5,0.625,0.75,0.875, 0.90))),
+                       post_ecdf = unname(quantile(post_ecdf,na.rm = T,probs = c(0.25,0.375,0.5,0.625,0.75,0.875, 0.90))))
+  print(table_ecdf)
+  
+  return(plot_data)
+  
+}
+#3 variables: dmin, dvol, d_lastirr, n_eve
+
+ks_test_plots("All","d_lastirr")
+########################################################
+# All additional functions created for the manuscript
+KS_test_weekly_function_advanced_liter <- function(variable, city) {
+  # variable = weekly_volume, budgetGal, residual, or "weekly_volume_budgetGal"
+  conv <- 3.78541  # gallons -> liters
+  
+  variable_name <- variable
+  city_name     <- city
+  
+  # ---------------- Filter data ----------------
+  if (city_name == "All" & variable_name != "weekly_volume_budgetGal") {
+    weekly_df <- dplyr::filter(all_pre_post_weekly, name == variable_name)
+  } else if (city_name == "All" & variable_name == "weekly_volume_budgetGal") {
+    weekly_df <- dplyr::filter(all_pre_post_weekly, name %in% c("weekly_volume","budgetGal"))
+  } else if (city_name != "All" & variable_name != "weekly_volume_budgetGal") {
+    weekly_df <- all_pre_post_weekly %>% dplyr::filter(name == variable_name, City == city_name)
+  } else {
+    weekly_df <- all_pre_post_weekly %>% dplyr::filter(name %in% c("weekly_volume","budgetGal"), City == city_name)
+  }
+  
+  # liters for plotting (keep gallons in 'value' for stats)
+  weekly_df <- weekly_df %>% dplyr::mutate(value_l = value * conv)
+  
+  # ---------------- Pre/Post vectors (gallons) ----------------
+  if (variable_name != "weekly_volume_budgetGal") {
+    pre_weekly  <- as.vector(unlist(weekly_df[weekly_df$pre_post == "pre",  "value"]))
+    post_weekly <- as.vector(unlist(weekly_df[weekly_df$pre_post == "post", "value"]))
+  } else {
+    pre_weekly  <- as.vector(unlist(weekly_df[weekly_df$pre_post == "pre"  & weekly_df$name == "weekly_volume",  "value"]))
+    post_weekly <- as.vector(unlist(weekly_df[weekly_df$pre_post == "post" & weekly_df$name == "weekly_volume", "value"]))
+  }
+  
+  # ---------------- KS stats (gallons) ----------------
+  Dcrit     <- 1.36 * sqrt((length(pre_weekly) + length(post_weekly)) / (length(pre_weekly) * length(post_weekly)))
+  pre_ecdf  <- ecdf(pre_weekly)
+  post_ecdf <- ecdf(post_weekly)
+  
+  ksTest_weekly_l <- ks.test(pre_weekly, post_weekly, alternative = "less")
+  ksTest_weekly_g <- ks.test(pre_weekly, post_weekly, alternative = "greater")
+  
+  ksTest_Df <- tibble::tibble(
+    ksTest_type       = c(ksTest_weekly_l$alternative, ksTest_weekly_g$alternative),
+    ksTest_type_short = c("less","greater"),
+    p_value           = c(ksTest_weekly_l$p.value, ksTest_weekly_g$p.value),
+    Dcrit             = Dcrit,
+    DStat             = c(ksTest_weekly_l$statistic, ksTest_weekly_g$statistic),
+    DStat_Bigger      = ifelse(DStat > Dcrit, "True", "False"),
+    p_significant     = ifelse(p_value < 0.05, "True", "False")
+  )
+  ksTest_Df_label <- dplyr::filter(ksTest_Df, DStat_Bigger == "True", p_significant == "True")
+  
+  # ---------------- Largest vertical gap ----------------
+  first_length  <- ifelse(ksTest_Df_label$ksTest_type_short[1] == "less", length(pre_weekly),  length(post_weekly))
+  second_length <- ifelse(ksTest_Df_label$ksTest_type_short[1] == "less", length(post_weekly), length(pre_weekly))
+  
+  first_data  <- if (length(pre_weekly)  == first_length)  pre_weekly  else post_weekly
+  second_data <- if (length(post_weekly) == second_length) post_weekly else pre_weekly
+  
+  combined_data         <- c(first_data, second_data)
+  combined_data_rank    <- order(combined_data)
+  location_assign       <- cumsum(ifelse(combined_data_rank <= first_length, second_length, -first_length))
+  biggest_value_location <- which.max(abs(location_assign))
+  largest_diff_location_gal <- combined_data[combined_data_rank[biggest_value_location]]
+  largest_diff_location_l   <- largest_diff_location_gal * conv
+  largest_diff_location_l   <- largest_diff_location_gal * conv
+  
+  # quantile guide x-positions (liters)
+  preQuntile_l  <- unname(quantile(pre_ecdf,  na.rm = TRUE, probs = c(0.25,0.375,0.5,0.625,0.75,0.875)))  * conv
+  postQuntile_l <- unname(quantile(post_ecdf, na.rm = TRUE, probs = c(0.25,0.375,0.5,0.625,0.75,0.875))) * conv
+  # ------- NEW: Means -------
+  pre_mean  <- mean(pre_weekly* conv,  na.rm = TRUE)
+  post_mean <- mean(post_weekly* conv, na.rm = TRUE)
+  # ---------------- Axis range (liters) ----------------
+  max_x_l    <- max(weekly_df$value_l, largest_diff_location_l, preQuntile_l, postQuntile_l, na.rm = TRUE)
+  breaks_end <- ceiling(max_x_l / 25000) * 25000
+  # we'll set limits via coord_cartesian() to preserve 'expand' padding
+  x_right <- breaks_end + 2000
+  
+  # ---------------- Plotting ----------------
+  if (variable_name != "weekly_volume_budgetGal") {
+    p_all_week_cdf <-
+      ggplot2::ggplot(weekly_df, ggplot2::aes(x = value_l, group = pre_post, color = pre_post)) +
+      ggplot2::stat_ecdf(size = 1) +
+      ggplot2::scale_color_manual(
+        values = c("post" = "#3275a8", "pre" = "pink"),
+        breaks = c("post","pre"),
+        labels = c("post-WC", "pre-WC")
+      ) +
+      ggplot2::theme_classic() +
+      # ggplot2::theme_bw(base_size = 12) +
+      ggplot2::theme(legend.position = "top", legend.title = ggplot2::element_blank()) +
+      ggplot2::xlab(gsub("gallons/week","liters/week", unique(weekly_df$x_label), ignore.case = TRUE)) +
+      ggplot2::ylab("ECDF") +
+      ggplot2::ggtitle(paste0(
+        "City: ", city_name, "\n", unique(weekly_df$title),
+        "\nD-stat:", round(ksTest_Df_label$DStat, 2), ", D-Crit:", round(ksTest_Df_label$Dcrit, 2),
+        "\np-value:", formatC(ksTest_Df_label$p_value),
+        "\nAlt. hypothesis:", ksTest_Df_label$ksTest_type_short
+      )) +
+      
+      ggplot2::geom_segment(
+        ggplot2::aes(x = largest_diff_location_l, y = post_ecdf(largest_diff_location_gal),
+                     xend = largest_diff_location_l, yend = pre_ecdf(largest_diff_location_gal)),
+        linetype = "dashed", color = "blue", size = 2
+      ) +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[1], y = .25,   xend = postQuntile_l[1], yend = .25),   linetype = "dotted", color = "brown") +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[2], y = 0.375, xend = postQuntile_l[2], yend = 0.375), linetype = "dotted", color = "brown") +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[3], y = 0.5,   xend = postQuntile_l[3], yend = 0.5),   linetype = "dotted", color = "brown") +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[4], y = 0.625, xend = postQuntile_l[4], yend = 0.625), linetype = "dotted", color = "brown") +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[5], y = 0.75,  xend = postQuntile_l[5], yend = 0.75),  linetype = "dotted", color = "brown") +
+      ggplot2::geom_segment(ggplot2::aes(x = preQuntile_l[6], y = 0.875, xend = postQuntile_l[6], yend = 0.875), linetype = "dotted", color = "brown") +
+      ggplot2::geom_point(ggplot2::aes(x = largest_diff_location_l, y = post_ecdf(largest_diff_location_gal)), color = "blue", size = 4) +
+      ggplot2::geom_point(ggplot2::aes(x = largest_diff_location_l, y = pre_ecdf(largest_diff_location_gal)),  color = "blue", size = 4) +
+      ggplot2::geom_text(
+        ggplot2::aes(x = largest_diff_location_l,
+                     y = mean(pre_ecdf(largest_diff_location_gal), post_ecdf(largest_diff_location_gal)),
+                     label = paste0("D-stat: ", round(ksTest_Df_label$DStat, 2))),
+        hjust = -.5, size = 5, color = "blue"
+      ) +
+      ggplot2::scale_x_continuous(
+        breaks = seq(0, breaks_end, by = 25000),
+        labels = scales::comma,
+        expand = ggplot2::expansion(mult = c(0.01, 0), add = c(1000, 2000)) # small left pad, keep right headroom
+      ) +
+      ggplot2::coord_cartesian(xlim = c(0, x_right), clip = "off") +
+      ggplot2::theme(plot.margin = ggplot2::margin(5.5, 24, 5.5, 5.5))
+    
+  } else {
+    p_all_week_cdf <-
+      weekly_df %>%
+      dplyr::mutate(variable_type = paste0(pre_post, "_", name)) %>%
+      dplyr::select(variable_type, value_l) %>%
+      dplyr::mutate(lineType = ifelse(grepl("budget", variable_type, fixed = TRUE), "budget", "water used")) %>%
+      ggplot2::ggplot(ggplot2::aes(x = value_l)) +
+      ggplot2::stat_ecdf(size = 1, ggplot2::aes(group = variable_type, color = variable_type, linetype = lineType)) +
+      ggplot2::scale_linetype_manual("Variable", values = c("dashed", "solid")) +
+      ggplot2::scale_color_manual(
+        "Variable",
+        values = c("#96C3F5","#3275a8","#E3A1B2","#E51349"),
+        labels = c("post-WC Budget", "post-WC Water Used",
+                   "pre-WC Budget",  "pre-WC Water Used")
+      ) +
+      
+      #ggplot2::theme_bw() +
+      ggplot2::theme_classic(base_size = 12) +
+      ggplot2::theme(legend.position = "top", legend.title = ggplot2::element_blank()) +
+      ggplot2::xlab("Water Volume (liters/week)") +
+      ggplot2::ylab("ECDF") +
+      ggplot2::ggtitle(paste0(
+        "City: ", city_name, "\n",
+        "Comparison between actual pre- and post-Water Check\nWater use and Water budget (requirement)",
+        "\nD-stat:", round(ksTest_Df_label$DStat, 2), ", D-Crit:", round(ksTest_Df_label$Dcrit, 2),
+        "\np-value:", formatC(ksTest_Df_label$p_value),
+        "\nAlt. hypothesis:", ksTest_Df_label$ksTest_type_short
+      )) +
+      
+      ggplot2::geom_segment(
+        ggplot2::aes(x = largest_diff_location_l, y = post_ecdf(largest_diff_location_gal),
+                     xend = largest_diff_location_l, yend = pre_ecdf(largest_diff_location_gal)),
+        linetype = "dashed", color = "blue", size = 2
+      ) +
+      ggplot2::geom_point(ggplot2::aes(x = largest_diff_location_l, y = post_ecdf(largest_diff_location_gal)), color = "blue", size = 4) +
+      ggplot2::geom_point(ggplot2::aes(x = largest_diff_location_l, y = pre_ecdf(largest_diff_location_gal)),  color = "blue", size = 4) +
+      ggplot2::geom_text(
+        ggplot2::aes(x = largest_diff_location_l,
+                     y = mean(pre_ecdf(largest_diff_location_gal), post_ecdf(largest_diff_location_gal)),
+                     label = paste0("D-stat: ", round(ksTest_Df_label$DStat, 2))),
+        hjust = -.5, size = 5, color = "blue"
+      ) +
+      ggplot2::guides(linetype = "none") +
+      ggplot2::scale_x_continuous(
+        breaks = seq(0, breaks_end, by = 25000),
+        labels = scales::comma,
+        expand = ggplot2::expansion(mult = c(0.01, 0), add = c(1000, 2000))
+      ) +
+      ggplot2::coord_cartesian(xlim = c(0, x_right), clip = "off") +
+      ggplot2::theme(plot.margin = ggplot2::margin(5.5, 24, 5.5, 5.5))
+  }
+  # Optional: diagnostics in console
+  message(sprintf("pre-largest diff percentile=%.3f, value=%.3f",
+                  pre_ecdf(largest_diff_location_gal), largest_diff_location_l))
+  message(sprintf("post-largest diff percentile=%.3f", post_ecdf(largest_diff_location_gal)))
+  # mean table
+  mean_table <- tibble(variable = variable_name,
+                       preMean = pre_mean,
+                       postMean = post_mean)
+  # percentile table
+  table_ecdf <- tibble(percentile_values = c(0.25,0.375,0.5, 0.625,0.75,0.875, 0.90),
+                       pre_ecdf = unname(quantile(pre_ecdf ,na.rm = T,probs = c(0.25,0.375,0.5,0.625,0.75,0.875, 0.90)))* conv,
+                       post_ecdf = unname(quantile(post_ecdf ,na.rm = T,probs = c(0.25,0.375,0.5,0.625,0.75,0.875, 0.90)))* conv)
+  
+  print(mean_table)
+  print(table_ecdf)
+  return(p_all_week_cdf)
+}
+
+KS_test_weekly_function_advanced_liter(variable = "weekly_volume", city = "All") # when using weekly_volume it is not changing the x-axis title
+
+
+KS_test_weekly_function_duration_eventNo_update <- function(variable, city) { 
+  variable_name <- variable
+  city_name <- city
+  
+  if (city_name == "All") {
+    weekly_df <- duration_eventFreq_weeklyData %>%
+      filter(name == variable_name)
+  } else {
+    weekly_df <- duration_eventFreq_weeklyData %>%
+      filter(name == variable_name, City == city_name)
+  }
+  
+  # pre/post vectors
+  pre_weekly  <- as.vector(unlist(weekly_df[weekly_df$pre_post == "pre",  "value"]))
+  post_weekly <- as.vector(unlist(weekly_df[weekly_df$pre_post == "post", "value"]))
+  
+  # Critical value for D-statistic
+  Dcrit <- 1.36 * sqrt((length(pre_weekly) + length(post_weekly)) /
+                         (length(pre_weekly) * length(post_weekly)))
+  
+  # ECDFs
+  pre_ecdf  <- ecdf(pre_weekly)
+  post_ecdf <- ecdf(post_weekly)
+  
+  # KS tests
+  ksTest_weekly_l  <- ks.test(pre_weekly, post_weekly, alternative = "less")
+  ksTest_weekly_g  <- ks.test(pre_weekly, post_weekly, alternative = "greater")
+  ksTest_weekly_ts <- ks.test(pre_weekly, post_weekly, alternative = "two.sided")
+  
+  ksTest_Df <- tibble(
+    ksTest_type       = c(ksTest_weekly_l$alternative, ksTest_weekly_g$alternative),
+    ksTest_type_short = c(
+      case_when(ksTest_type == "the CDF of x lies below that of y" ~ "less",
+                ksTest_type == "the CDF of x lies above that of y" ~ "greater")
+    ),
+    p_value      = c(ksTest_weekly_l$p.value, ksTest_weekly_g$p.value),
+    Dcrit        = Dcrit,
+    DStat        = c(ksTest_weekly_l$statistic, ksTest_weekly_g$statistic),
+    DStat_Bigger = ifelse(DStat > Dcrit, "True", "False"),
+    p_significant = ifelse(p_value < 0.05, "True", "False")
+  )
+  
+  true_false <- paste0(ksTest_Df[1,6], ksTest_Df[1,7])
+  if (true_false %in% c("FalseTrue", "FalseFalse", "TrueFalse")) {
+    ksTest_Df_label <- ksTest_Df %>% filter(ksTest_type_short == "less")
+  } else {
+    ksTest_Df_label <- ksTest_Df %>% filter(DStat_Bigger == "True", p_significant == "True")
+  }
+  
+  # Location of max vertical distance
+  first_length  <- as.vector(ifelse(ksTest_Df_label$ksTest_type_short == "less",
+                                    length(pre_weekly), length(post_weekly)))[1]
+  second_length <- as.vector(ifelse(ksTest_Df_label$ksTest_type_short == "less",
+                                    length(post_weekly), length(pre_weekly)))[1]
+  
+  first_data  <- if (length(pre_weekly)  == first_length)  pre_weekly  else post_weekly
+  second_data <- if (length(post_weekly) == second_length) post_weekly else pre_weekly
+  
+  combined_data <- c(first_data, second_data)
+  combined_rank <- order(combined_data)
+  location_assign <- cumsum(ifelse(combined_rank <= first_length, second_length, -first_length))
+  biggest_value_location <- which.max(abs(location_assign))
+  largest_diff_location  <- combined_data[combined_rank[biggest_value_location]]
+  
+  # Quantiles (already shown)
+  preQuntile  <- unname(quantile(pre_ecdf,  na.rm = TRUE, probs = c(0.25,0.375,0.5,0.625,0.75,0.875)))
+  postQuntile <- unname(quantile(post_ecdf, na.rm = TRUE, probs = c(0.25,0.375,0.5,0.625,0.75,0.875)))
+  
+  # ------- NEW: Means -------
+  pre_mean  <- mean(pre_weekly,  na.rm = TRUE)
+  post_mean <- mean(post_weekly, na.rm = TRUE)
+  # --------------------------
+  
+  # Plot
+  p_all_week_cdf <- ggplot(weekly_df, aes(x = value, group = pre_post, color = pre_post)) +
+    stat_ecdf(size = 1) +
+    scale_color_manual(values = c("#3275a8", "pink")) +  # post=blue, pre=pink (alphabetical mapping)
+    theme_bw(base_size = 12) +
+    theme(legend.position = "top") +
+    xlab(unique(weekly_df$x_label)) +
+    ylab("ECDF") +
+    ggtitle(paste0("City: ", city_name, "\n",
+                   unique(weekly_df$title),
+                   "\nD-stat:", round(ksTest_Df_label$DStat, 2),
+                   ", D-Crit:", round(ksTest_Df_label$Dcrit, 2),
+                   "\np-value:", formatC(ksTest_Df_label$p_value),
+                   "\nAlt. hypothesis:", ksTest_Df_label$ksTest_type_short)) +
+    theme_classic() +
+    theme(legend.title = element_blank(),
+          legend.position = "top") +
+    # KS gap
+    geom_segment(aes(x = largest_diff_location, y = post_ecdf(largest_diff_location),
+                     xend = largest_diff_location, yend = pre_ecdf(largest_diff_location)),
+                 linetype = "dashed", color = "blue", size = 2) +
+    # Quantile offsets (existing)
+    geom_segment(aes(x = preQuntile[1],  y = 0.25,  xend = postQuntile[1],  yend = 0.25),  linetype = "dotted", color = "brown") +
+    geom_segment(aes(x = preQuntile[2],  y = 0.375, xend = postQuntile[2], yend = 0.375), linetype = "dotted", color = "brown") +
+    geom_segment(aes(x = preQuntile[3],  y = 0.5,   xend = postQuntile[3], yend = 0.5),   linetype = "dotted", color = "brown") +
+    geom_segment(aes(x = preQuntile[4],  y = 0.625, xend = postQuntile[4], yend = 0.625), linetype = "dotted", color = "brown") +
+    geom_segment(aes(x = preQuntile[5],  y = 0.75,  xend = postQuntile[5], yend = 0.75),  linetype = "dotted", color = "brown") +
+    geom_segment(aes(x = preQuntile[6],  y = 0.875, xend = postQuntile[6], yend = 0.875), linetype = "dotted", color = "brown") +
+    geom_point(aes(x = largest_diff_location, y = post_ecdf(largest_diff_location)), color = "blue", size = 4) +
+    geom_point(aes(x = largest_diff_location, y = pre_ecdf(largest_diff_location)),  color = "blue", size = 4) +
+    geom_text(aes(x = largest_diff_location, 
+                  y = mean(pre_ecdf(largest_diff_location), post_ecdf(largest_diff_location)),
+                  label = paste0("D-stat: ", round(ksTest_Df_label$DStat, 2))),
+              hjust = -0.5, size = 5, color = "blue") +
+    # ------- NEW: show means -------
+  geom_vline(xintercept = pre_mean,  color = "pink",    linetype = "longdash", size = 0.8) +
+    geom_vline(xintercept = post_mean, color = "#3275a8", linetype = "longdash", size = 0.8) +
+    annotate("label", x = pre_mean,  y = 0.98,
+             label = paste0("Pre mean = ", round(pre_mean, 1)),
+             color = "pink", size = 3, vjust = 1, label.size = NA) +
+    annotate("label", x = post_mean, y = 0.94,
+             label = paste0("Post mean = ", round(post_mean, 1)),
+             color = "#3275a8", size = 3, vjust = 1, label.size = NA)
+  # -------------------------------
+  
+  # Optional: diagnostics in console
+  message(sprintf("pre-largest diff percentile=%.3f, value=%.3f",
+                  pre_ecdf(largest_diff_location), largest_diff_location))
+  message(sprintf("post-largest diff percentile=%.3f", post_ecdf(largest_diff_location)))
+  
+  mean_table <- tibble(variable = variable_name,
+                       preMean = pre_mean,
+                       postMean = post_mean)
+  
+  table_ecdf <- tibble(
+    percentile_values = c(0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 0.90),
+    pre_ecdf  = unname(quantile(pre_ecdf,  na.rm = TRUE, probs = c(0.25,0.375,0.5,0.625,0.75,0.875,0.90))),
+    post_ecdf = unname(quantile(post_ecdf, na.rm = TRUE, probs = c(0.25,0.375,0.5,0.625,0.75,0.875,0.90)))
+  )
+  print(paste0("Dstat=",ksTest_Df_label$DStat))
+  print(paste0("Dcrit=",Dcrit))
+  print(table_ecdf)
+  print(mean_table)
+  return(p_all_week_cdf)
+}
+KS_test_weekly_function_duration_eventNo("frequency", "All")
+KS_test_weekly_function_duration_eventNo_update("frequency", "All")
+
+
+KS_test_weekly_function_duration_eventNo("total_irrigation_minutes", "All")
+KS_test_weekly_function_duration_eventNo_update("total_irrigation_minutes", "All")

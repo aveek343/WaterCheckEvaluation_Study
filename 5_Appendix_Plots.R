@@ -32,12 +32,30 @@ plot_weekly_all_waterUse_data %>%
          pct =vol/total_vol ) %>%
   filter( pre_post == 'pre') -> pre_waterCheck_waterUse_irrigation_other
 
+# in liter
+pre_waterCheck_waterUse_irrigation_other %>%
+  ggplot()+
+  geom_bar(aes(x = label, y = vol * 3.78541/1000, group = pre_post, fill = label), 
+           stat = 'identity', position = 'dodge') +
+  facet_wrap(~City) + 
+
+  scale_fill_manual("Irrigation and Indoor Water use",
+                    values = c("#eb3483", "#4334eb"), labels = c("Irrigation", "Indoor")) + 
+  scale_x_discrete(labels=c("irrigation" = "Irrigation", "other" = "Indoor"))+
+  labs(x= "Water use type", y = "Total water use during\npre-Water Check period (kilo liter)") +
+  theme_classic()+ 
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=15),
+        legend.position = "none",
+        strip.text.x = element_text(size = 15, colour = "black", angle = 0))
+
+# in gallons
 pre_waterCheck_waterUse_irrigation_other %>%
   ggplot()+
   geom_bar(aes(x = label, y = vol/1000, group = pre_post, fill = label), 
            stat = 'identity', position = 'dodge') +
   facet_wrap(~City) + 
-
+  
   scale_fill_manual("Irrigation and Indoor Water use",
                     values = c("#eb3483", "#4334eb"), labels = c("Irrigation", "Indoor")) + 
   scale_x_discrete(labels=c("irrigation" = "Irrigation", "other" = "Indoor"))+
@@ -47,6 +65,8 @@ pre_waterCheck_waterUse_irrigation_other %>%
         axis.title = element_text(size=15),
         legend.position = "none",
         strip.text.x = element_text(size = 15, colour = "black", angle = 0))
+
+
 # pre-water check water use indoor vs outdoor
 plot_weekly_all_waterUse_data %>%
   left_join(Sites %>% select(SiteID,City)) %>% 
@@ -119,11 +139,50 @@ df_daily %>% filter(SiteID %in% sites_with_pre_post_df$SiteID) %>%
 
 plot(preWaterCheckDailyWaterUseBehaviorValues)
 
+# city-wise pre-water check water use behavior liter
+preWaterCheckDailyWaterUseBehaviorValues_liters <-
+  df_daily %>%
+  filter(SiteID %in% sites_with_pre_post_df$SiteID) %>%
+  left_join(Sites %>% select(SiteID, City), by = "SiteID") %>%
+  filter(pre_post == "pre") %>%
+  select(SiteID, City, n_eve, dvol, dmin, d_lastirr) %>%
+  pivot_longer(cols = c(n_eve, dvol, dmin, d_lastirr),
+               names_to = "variable", values_to = "value") %>%
+  mutate(
+    # convert gallons -> liters only for dvol
+    value = if_else(variable == "dvol", value * 3.78541, value),
+    new_variable = dplyr::recode(
+      variable,
+      "n_eve"     = "Daily irrigation events (number)",
+      "d_lastirr" = "Days between irrigation (day)",
+      "dmin"      = "Daily irrigation time (min)",
+      "dvol"      = "Daily irrigation volume (liter)"
+    )
+  ) %>%
+  ggplot(aes(x = factor(SiteID), y = value, color = new_variable)) +
+  geom_boxplot(outlier.colour = "black", outlier.shape = 16, outlier.size = 2) +
+  facet_grid(rows = vars(new_variable), 
+             cols = vars(City), scale= "free") +
+  scale_color_manual(
+    "Variables",
+    values = c("#eb3483", "cyan", "#4334eb", "#96CEF5"),
+    breaks = c("Daily irrigation events (number)",
+               "Days between irrigation (day)",
+               "Daily irrigation time (min)",
+               "Daily irrigation volume (liter)")
+  ) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        legend.position = "none") +
+  labs(x = "SiteID", y = "value")
+
+plot(preWaterCheckDailyWaterUseBehaviorValues_liters)
+
+
 ###############################################
 # Figure 4: Cumulative distribution function of residuals (water use – water budget) 
 # showing changes in water use among high and low water users.
 
-
+#in gallon
 weekly_volumetric_df_with_pre_wc_budget_comparison %>%
   filter(name == 'residual') %>%
   mutate(new_variable = paste0(pre_post, '_', user_cat)) %>% 
@@ -147,11 +206,34 @@ weekly_volumetric_df_with_pre_wc_budget_comparison %>%
 
 plot(CDM_Residual)
 
+# in liter
 
+weekly_volumetric_df_with_pre_wc_budget_comparison %>%
+  filter(name == 'residual') %>%
+  mutate(new_variable = paste0(pre_post, '_', user_cat)) %>% 
+  ggplot(aes(value,
+             group = new_variable, 
+             color = user_cat,linetype= pre_post 
+  )) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1)) +
+  stat_ecdf(size=1) +
+  scale_color_manual("Water user group",
+                     labels= c('Low user', 'High user'),
+                     values = c("blue","#E51349"))+
+  scale_linetype_manual("Water use period",
+                        values=c("dotted", "solid"), 
+                        breaks=c('pre', 'post')) +
+  theme_classic(base_size = 12) +
+  theme(legend.position ="top") +
+  xlab("Residual = Actual water use (liter/week) - Water budget (liter/week)") +
+  ylab("Empirical Cumulative Distribution Function (ECDF)") -> CDM_Residual_liter
+
+
+plot(CDM_Residual_liter)
 ###############################################
 # Figure 5: KS-test for four water use variables between pre- and post-water check periods
 # variables: dvol, dmin, d_lastirr, n_eve
-individualDailyVolumeKSTest_plot <- ks_test_plots_siteWise(15, 'dvol')
+individualDailyVolumeKSTest_plot <- ks_test_plots_siteWise_liter(15, 'dvol')
 plot(individualDailyVolumeKSTest_plot)
 individualEventKSTest_plot <- ks_test_plots_siteWise(15, 'n_eve')
 plot(individualEventKSTest_plot)

@@ -78,6 +78,79 @@ dataframe  %>%
         axis.title = element_text(size=15)) -> inOut_event_comparison_plot
 
 plot(inOut_event_comparison_plot)
+
+# Indoor vs Outdoor in Liter
+# The function takes in an eventid (check ev_data_labeled) and site_id. Use ev_data_labeled to select an event.
+plot_ev_site_df_lpm <- function(eventid, siteid){
+  site_data <- ev_data_labeled %>% filter(SiteID == siteid)
+  i <- which(site_data$EventID == eventid)
+  end_time <- site_data$datetime[i] + (site_data$duration_min[i] * 60)
+  
+  s_title <- paste0(
+    "Date = ", as.Date(site_data$datetime[i]), "\n",
+    "Label = ", site_data$label[i], "\n",
+    "Volume (L) = ", round(site_data$volume_gal[i] * 3.78541, 0), "\n",
+    "Duration (min) = ", round(site_data$duration_min[i], 0), "\n",
+    "Participant #: ", siteid, "\n"
+  )
+  
+  data_evid_all %>%
+    filter(SiteID == siteid) %>%
+    select(id, datetime, VolumeGal) %>%
+    filter(id == eventid) %>%
+    group_modify(~ add_row(.x, .before = 0)) %>%
+    fill(datetime, .direction = "downup") %>%
+    mutate(datetime = if_else(is.na(VolumeGal), datetime - 5, datetime)) %>%
+    mutate(VolumeGal = replace_na(VolumeGal, 0)) %>%
+    group_modify(~ add_row(.x, .after = max(nrow(.x)))) %>%
+    fill(datetime, .direction = "downup") %>%
+    mutate(datetime = if_else(is.na(VolumeGal), datetime + 5, datetime)) %>%
+    mutate(VolumeGal = replace_na(VolumeGal, 0)) %>%
+    mutate(
+      tdiff = replace_na(as.numeric(difftime(datetime, lag(datetime), units = "secs")), 0),
+      n = cumsum(tdiff),
+      hour = as.numeric(format(datetime, "%H")),
+      hour = ifelse(hour == 0, 24, hour),
+      diffH = hour - min(hour),
+      general_hour = as.numeric(6 + diffH),
+      minute = as.numeric(format(datetime, "%M")),
+      second = as.numeric(format(datetime, "%S")),
+      genericTime = as_datetime(strftime(
+        paste0("2022-06-01"," ",general_hour, ":", minute, ":", second),
+        format = "%Y-%m-%d %H:%M:%S"
+      )),
+      VolumeL = VolumeGal * 3.78541                 # convert to liters
+    ) %>%
+    select(id, genericTime, VolumeL) -> p
+  
+  return(p)
+}
+
+# Build the two example series
+irrigation_df_lpm  <- plot_ev_site_df_lpm(88, 20) %>%  mutate(variable = "Irrigation")
+other_indoor_df_lpm <- plot_ev_site_df_lpm(341, 29) %>% mutate(variable = "Indoor")
+
+dataframe_lpm <- bind_rows(irrigation_df_lpm, other_indoor_df_lpm)
+
+# Plot: liters per minute (LPM)
+inOut_event_comparison_plot_lpm <- dataframe_lpm %>%
+  ggplot(aes(genericTime, VolumeL * (60/5), group = variable, color = variable)) +
+  geom_line(size = 1) +
+  scale_color_manual("", values = c("#4334eb", "#eb3483"),
+                     labels = c("Indoor use", "Sprinkler Irrigation")) +
+  labs(y = "Flow rate (L/min)", x = "Time") +
+  theme_classic() +
+  theme(
+    legend.position = "top",
+    legend.title = element_text(size = 15),
+    legend.text  = element_text(size = 15),
+    axis.text.x  = element_text(size = 12),
+    axis.text.y  = element_text(size = 12),
+    axis.title   = element_text(size = 15)
+  )
+
+plot(inOut_event_comparison_plot_lpm)
+
 ##################################################################
 # Following codes can create Figure 2 (Participant enrollment and praticipation in the different study phases)
 # filtering only the households that participated the study
@@ -91,8 +164,8 @@ WaterCheckData %>%
   mutate(water_check_completed = 1) %>%
   select(SiteID, water_check_completed)-> sites_with_waterCheck_completed
 # Inverview completed
-Interview_completed <- data.frame(SiteID = c(8,21,15,38,65,62,44,68,19), 
-                                  interviewCompleted = rep(1,9))
+Interview_completed <- data.frame(SiteID = c(8,21,15,38,65,62,44,68,19,28), 
+                                  interviewCompleted = rep(1,10))
 
 
 # Combine all participant data ind different phases
@@ -135,9 +208,43 @@ plot(participantBarPlot)
 prePost_waterVol_budget_comparison_with_KSTest <- KS_test_weekly_function_advanced(variable = "weekly_volume_budgetGal", city = "All")
 plot(prePost_waterVol_budget_comparison_with_KSTest)
 
+prePost_waterVol_budget_comparison_with_KSTest_liter <- KS_test_weekly_function_advanced_liter(variable = "weekly_volume_budgetGal", city = "All")
+plot(prePost_waterVol_budget_comparison_with_KSTest_liter)
+
+
+
 ##################################################################
 # Following codes can create Figure 4 (ECDFs of pre- and post-Water Check water use volume for high (red) and low (blue) users before (dotted) and after (solid) a water check
-# weekly volume
+# weekly volume liter
+library(scales)
+
+weekly_volumetric_df_with_pre_wc_budget_comparison %>%
+  filter(name == "weekly_volume") %>%
+  mutate(new_variable = paste0(pre_post, "_", user_cat)) %>%
+  ggplot(aes(x = value * 3.78541,         # gallons -> liters
+             group = new_variable,
+             color = user_cat,
+             linetype = pre_post)) +
+  stat_ecdf(size = 1) +
+  scale_linetype_manual("Water use period",
+                        values = c("dotted", "solid"),
+                        breaks  = c("pre", "post")) +
+  scale_color_manual("Water user group",
+                     labels = c("Low user", "High user"),
+                     values = c("blue", "#E51349")) +
+  scale_x_continuous(
+    name   = "Water volume (liters/week)",
+    breaks = seq(0, 100000, 10000),
+    labels = label_number(big.mark = ",", accuracy = 1),
+    limits = c(0, 100000),
+    expand = expansion(add = c(800, 0)),
+    guide  = guide_axis(angle = 45)       # tilts tick labels
+  ) +
+  theme_classic(base_size = 12) +
+  theme(legend.position = "top")  -> group_wise_PrePost_waterUseComparison_liter
+plot(group_wise_PrePost_waterUseComparison_liter)
+
+# weekly volume 
 weekly_volumetric_df_with_pre_wc_budget_comparison %>%
   filter(name == 'weekly_volume') %>%
   mutate(new_variable = paste0(pre_post, '_', user_cat)) %>%

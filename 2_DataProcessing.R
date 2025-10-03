@@ -11,7 +11,7 @@ library(lubridate)
 library(tidymodels)
 library(ggplot2)
 library(ggpubr)
-
+library(randomForest)
 # Database connection
 con <- dbConnect(RSQLite::SQLite(), "./Database/ProjectDatabase_RawData.db")
 
@@ -366,3 +366,4 @@ sites_with_pre_post_df <- data.frame(SiteID = unique(sites_with_pre_post$SiteID)
 
 # this data has all the information needed for analisis / test
 # Looking at volume over bidget (or overirrigation) we can see if behavior changed related to weather
+
